@@ -16,9 +16,12 @@ const Image = struct {
     pixels: []Color,
 
     pub fn create(width: u8, height: u8, allocator: std.mem.Allocator) !Image {
-        const pixel_count = width * height;
+        const pixel_count = @as(u16, width) * @as(u16, height);
+        std.debug.print("Pixel count: {}\n", .{pixel_count});
         const pixels = try allocator.alloc(Color, pixel_count);
-        std.mem.zeroInit(Color, pixels);
+        for (pixels) |*pixel| {
+            pixel.* = .{};
+        }
         return Image{
             .width = width,
             .height = height,
@@ -36,15 +39,63 @@ const Image = struct {
 
     pub fn print(self: *Image) void {
         for (self.pixels, 0..) |pixel, i| {
-            std.debug.print("Pixel {}: {},{},{}\n", .{ i, pixel.r, pixel.g, pixel.b });
+            const isBlack = pixel.r == 0 and pixel.g == 0 and pixel.b == 0;
+            if (isBlack) std.debug.print("x", .{}) else std.debug.print(".", .{});
+
+            if ((i + 1) % self.width == 0)
+                std.debug.print("\n", .{});
         }
     }
+
+    pub fn toP3(self: *Image) ![]u8 {
+        var buffer: [786444]u8 = undefined; // 
+        var written_length: usize= 0;
+        const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {}\n255\n", .{ self.width, self.height });
+        
+        written_length += written_header_slice.len;
+
+        for (self.pixels) |pixel| {
+            const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}\n", .{ pixel.r, pixel.g, pixel.b });
+            written_length += written_color_slice.len;
+        }
+
+
+        //std.debug.print("Buffer:\n{s}{s}{s}", .{"start", buffer[0..written_length], "end"});
+
+        return buffer[0..written_length];
+    }
 };
+pub fn isPointInCircle(x: i32, y: i32, circle_x: i32, circle_y: i32, circle_radius: u32) bool {
+    const distance_x = @abs(circle_x - x);
+    const distance_y = @abs(circle_y - y);
+    const distance_from_origin = std.math.sqrt((distance_x * distance_x) + (distance_y * distance_y));
+    return (distance_from_origin <= circle_radius);
+}
 
 pub fn main() !void {
     var allocator = std.heap.page_allocator;
-    var img = try Image.create(3, 2, allocator);
+    var img = try Image.create(64, 48, allocator);
     defer allocator.free(img.pixels);
+    const white = Color{ .r = 255, .g = 255, .b = 255 };
 
-    img.print();
+    const circle_x = img.width / 2;
+    const circle_y = img.height / 2;
+    const circle_radius = 5;
+
+    for (0..img.width) |x| {
+        for (0..img.height) |y| {
+            if (isPointInCircle(@intCast(x), @intCast(y), circle_x, circle_y, circle_radius)) {
+                try img.setPixel(@intCast(x), @intCast(y), white);
+            }
+        }
+    }
+
+    const p3_parsed_image = try img.toP3();
+    const file_path = "test.ppm";
+
+    // Writing to a file
+    const file = try std.fs.cwd().createFile(file_path, .{});
+    defer file.close();
+
+    try file.writeAll(p3_parsed_image);
 }
