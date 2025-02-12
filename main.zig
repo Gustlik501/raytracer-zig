@@ -48,7 +48,7 @@ const Image = struct {
     }
 
     pub fn toP3(self: *Image) ![]u8 {
-        var buffer: [786444]u8 = undefined; // 
+        var buffer: [786444]u8 = undefined; // Absolute maximum filesize for a 256x256 image
         var written_length: usize= 0;
         const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {} 255\n", .{ self.width, self.height });
         
@@ -71,11 +71,32 @@ const Image = struct {
         return buffer[0..written_length];
     }
 };
-pub fn isPointInCircle(x: i32, y: i32, circle_x: i32, circle_y: i32, circle_radius: u32) bool {
-    const distance_x = @abs(circle_x - x);
-    const distance_y = @abs(circle_y - y);
-    const distance_from_origin = std.math.sqrt((distance_x * distance_x) + (distance_y * distance_y));
-    return (distance_from_origin <= circle_radius);
+
+//NOTE: firguring out calculating this as a float maybe :<
+//      Could be cool to automagically detirmine and return the minimum sized float needed to represet the distance correctly,
+//      even when it's passed an int. Might be a cool project function to learn comptime later on
+pub fn distance(fp_x: anytype, fp_y: anytype, sp_x: anytype, sp_y: anytype) @TypeOf(fp_x) {
+    //switch (@typeInfo(@TypeOf(fp_x))){
+    //    .int => {
+    //        std.debug.print("Calculating info for integer", .{})
+    //        },
+    //    else => {},
+    //}
+
+    //const fp_x_float: f32 = @floatFromInt(fp_x);
+    //const fp_y_float: f32 = @floatFromInt(fp_y);
+    //const sp_x_float: f32 = @floatFromInt(sp_x);
+    //const sp_y_float: f32 = @floatFromInt(sp_y);
+
+    const distance_x = @abs(fp_x - sp_x);
+    const distance_y = @abs(fp_y - sp_y);
+    const distance_between_points = std.math.sqrt((distance_x * distance_x) + (distance_y * distance_y));
+    return distance_between_points;
+}
+
+pub fn isPointInCircle(x: i16, y: i16, circle_x: i16, circle_y: i16, circle_radius: u16) bool { 
+    const distance_from_origin = distance(x,y,circle_x,circle_y);
+    return (distance_from_origin < circle_radius);
 }
 
 pub fn main() !void {
@@ -86,13 +107,15 @@ pub fn main() !void {
 
     const circle_x = img.width / 2;
     const circle_y = img.height / 2;
-    const circle_radius = 5;
+    const circle_radius = 7;
 
     for (0..img.width) |x| {
         for (0..img.height) |y| {
+
             if (isPointInCircle(@intCast(x), @intCast(y), circle_x, circle_y, circle_radius)) {
                 try img.setPixel(@intCast(x), @intCast(y), white);
             }
+
         }
     }
 
