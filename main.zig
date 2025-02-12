@@ -50,13 +50,19 @@ const Image = struct {
     pub fn toP3(self: *Image) ![]u8 {
         var buffer: [786444]u8 = undefined; // 
         var written_length: usize= 0;
-        const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {}\n255\n", .{ self.width, self.height });
+        const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {} 255\n", .{ self.width, self.height });
         
         written_length += written_header_slice.len;
 
-        for (self.pixels) |pixel| {
-            const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}\n", .{ pixel.r, pixel.g, pixel.b });
+        for (self.pixels , 0..) |pixel, i| {
+            const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}", .{ pixel.r, pixel.g, pixel.b });
             written_length += written_color_slice.len;
+
+            if ((i + 1) % self.width == 0) _ = try std.fmt.bufPrint(buffer[written_length..], "\n", .{})
+            else _ = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
+
+            written_length += 1;
+
         }
 
 
