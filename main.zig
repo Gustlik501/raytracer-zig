@@ -49,26 +49,23 @@ const Image = struct {
 
     pub fn toP3(self: *Image) ![]u8 {
         var buffer: [786444]u8 = undefined; // Absolute maximum filesize for a 256x256 image
-        var written_length: usize= 0;
+        var written_length: usize = 0;
         const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {} 255\n", .{ self.width, self.height });
-        
+
         written_length += written_header_slice.len;
 
-        for (self.pixels , 0..) |pixel, i| {
+        for (self.pixels, 0..) |pixel, i| {
             const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}", .{ pixel.r, pixel.g, pixel.b });
             written_length += written_color_slice.len;
 
-            if ((i + 1) % self.width == 0) _ = try std.fmt.bufPrint(buffer[written_length..], "\n", .{})
-            else _ = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
+            if ((i + 1) % self.width == 0) _ = try std.fmt.bufPrint(buffer[written_length..], "\n", .{}) else _ = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
 
             written_length += 1;
-
         }
-
 
         //std.debug.print("Buffer:\n{s}{s}{s}", .{"start", buffer[0..written_length], "end"});
 
-        return buffer[0..written_length];
+        return buffer[0..written_length]; //This will cause a dangling pointer.
     }
 };
 
@@ -94,8 +91,8 @@ pub fn distance(fp_x: anytype, fp_y: anytype, sp_x: anytype, sp_y: anytype) @Typ
     return distance_between_points;
 }
 
-pub fn isPointInCircle(x: i16, y: i16, circle_x: i16, circle_y: i16, circle_radius: u16) bool { 
-    const distance_from_origin = distance(x,y,circle_x,circle_y);
+pub fn isPointInCircle(x: i16, y: i16, circle_x: i16, circle_y: i16, circle_radius: u16) bool {
+    const distance_from_origin = distance(x, y, circle_x, circle_y);
     return (distance_from_origin < circle_radius);
 }
 
@@ -111,11 +108,9 @@ pub fn main() !void {
 
     for (0..img.width) |x| {
         for (0..img.height) |y| {
-
             if (isPointInCircle(@intCast(x), @intCast(y), circle_x, circle_y, circle_radius)) {
                 try img.setPixel(@intCast(x), @intCast(y), white);
             }
-
         }
     }
 
