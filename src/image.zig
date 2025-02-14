@@ -1,11 +1,5 @@
 const std = @import("std");
 
-pub const Color = struct {
-    r: u8 = 0,
-    g: u8 = 0,
-    b: u8 = 0,
-};
-
 pub const ImageError = error{
     PixelOutOfBounds,
 };
@@ -13,15 +7,13 @@ pub const ImageError = error{
 pub const Image = struct {
     width: u8,
     height: u8,
-    pixels: []Color,
+    pixels: []@Vector(3, u8),
 
     pub fn create(width: u8, height: u8, allocator: std.mem.Allocator) !Image {
         const pixel_count = @as(u16, width) * @as(u16, height);
         std.debug.print("Pixel count: {}\n", .{pixel_count});
-        const pixels = try allocator.alloc(Color, pixel_count);
-        for (pixels) |*pixel| {
-            pixel.* = .{};
-        }
+        const pixels = try allocator.alloc(@Vector(3, u8), pixel_count);
+        @memset(pixels, @splat(0));
         return Image{
             .width = width,
             .height = height,
@@ -29,7 +21,7 @@ pub const Image = struct {
         };
     }
 
-    pub fn setPixel(self: *Image, x: u32, y: u32, color: Color) !void {
+    pub fn setPixel(self: *Image, x: u32, y: u32, color: @Vector(3, u8)) !void {
         if (x >= self.width or y >= self.height) {
             return error.PixelOutOfBounds;
         }
@@ -54,7 +46,7 @@ pub const Image = struct {
         try writer.print("P3\n{} {} 255\n", .{ self.width, self.height });
 
         for (self.pixels, 0..) |pixel, i| {
-            try writer.print("{} {} {}", .{ pixel.r, pixel.g, pixel.b });
+            try writer.print("{} {} {}", .{ pixel[0], pixel[1], pixel[2] });
             if ((i + 1) % self.width == 0)
                 try writer.print("\n", .{})
             else

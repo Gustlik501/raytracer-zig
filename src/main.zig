@@ -2,7 +2,6 @@ const std = @import("std");
 const print = std.debug.print;
 
 const Image = @import("image.zig").Image;
-const Color = @import("image.zig").Color;
 
 //NOTE: firguring out calculating this as a float maybe :<
 //      Could be cool to automagically detirmine and return the minimum sized float needed to represet the distance correctly,
@@ -39,7 +38,6 @@ pub fn main() !void {
 
     var img = try Image.create(64, 48, allocator);
     defer allocator.free(img.pixels);
-    const white = Color{ .r = 255, .g = 255, .b = 255 };
 
     const circle_x = img.width / 2;
     const circle_y = img.height / 2;
@@ -48,7 +46,7 @@ pub fn main() !void {
     for (0..img.width) |x| {
         for (0..img.height) |y| {
             if (isPointInCircle(@intCast(x), @intCast(y), circle_x, circle_y, circle_radius)) {
-                try img.setPixel(@intCast(x), @intCast(y), white);
+                try img.setPixel(@intCast(x), @intCast(y), .{ 255, 255, 255 });
             }
         }
     }
