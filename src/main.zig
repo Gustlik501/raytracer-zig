@@ -17,19 +17,14 @@ pub fn solveQuadratic(a: f32, b: f32, c: f32) ?[2]f32 {
     var solutions = [2]f32{ 0, 0 };
     const discr: f32 = b * b - 4 * a * c;
     if (discr < 0) return null else if (discr == 0) {
-        solutions[0] = -0.5 * b / a;
-        solutions[1] = -0.5 * b / a;
+        solutions = .{ -0.5 * b / a, -0.5 * b / a };
     } else {
         const q: f32 = if (b > 0) -0.5 * (b + @sqrt(discr)) else -0.5 * (b - @sqrt(discr));
-        solutions[0] = q / a;
-        solutions[1] = c / q;
+        solutions = .{ q / a, c / q };
     }
     if (solutions[0] > solutions[1]) {
-        const temp = solutions[1];
-        solutions[1] = solutions[0];
-        solutions[0] = temp;
+        std.mem.swap(f32, &solutions[0], &solutions[1]);
     }
-
     return solutions;
 }
 
@@ -46,7 +41,7 @@ pub const Ray = struct {
     pub fn getSphereIntersections(self: *const Ray, sphere: Sphere) ?[2]f32 {
         const distance_to_origin = self.origin - sphere.position;
 
-        const a = dotProduct(self.direction, self.direction); //Always 1???
+        const a = 1; //dotProduct(self.direction, self.direction); //Always 1???
         const b = 2 * dotProduct(self.direction, distance_to_origin);
         const c = dotProduct(distance_to_origin, distance_to_origin) - (sphere.radius * sphere.radius);
 
