@@ -48,29 +48,23 @@ const Image = struct {
         }
     }
 
-    pub fn toP3(self: *Image) ![]u8 {
-        var buffer: [786444]u8 = undefined; // Absolute maximum filesize for a 256x256 image
-        var written_length: usize = 0;
-        const written_header_slice = try std.fmt.bufPrint(&buffer, "P3\n{} {} 255\n", .{ self.width, self.height });
+    pub fn toP3(self: *Image, allocator: std.mem.Allocator) ![]u8 {
+        var string = std.ArrayList(u8).init(allocator);
+        const writer = string.writer();
 
-        written_length += written_header_slice.len;
+        try writer.print("P3\n{} {} 255\n", .{ self.width, self.height });
 
         for (self.pixels, 0..) |pixel, i| {
-            const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}", .{ pixel.r, pixel.g, pixel.b });
-            written_length += written_color_slice.len;
-
-            if ((i + 1) % self.width == 0) {
-                const written_spacer = try std.fmt.bufPrint(buffer[written_length..], "\n", .{});
-                written_length += written_spacer.len;
-            } else {
-                const written_spacer = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
-                written_length += written_spacer.len;
-            }
+            try writer.print("{} {} {}", .{ pixel.r, pixel.g, pixel.b });
+            if ((i + 1) % self.width == 0) 
+                try writer.print("\n", .{}) 
+            else 
+                try writer.print(" ", .{});
+            
         }
 
-        //print("Buffer:\n{s}{s}{s}", .{"start", buffer[0..written_length], "end"});
-
-        return buffer[0..written_length]; //This will cause a dangling pointer.
+        const s = try string.toOwnedSlice();
+        return s; 
     }
 };
 
@@ -105,6 +99,7 @@ pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
     const allocator = gpa.allocator();
     defer _ = gpa.deinit();
+    defer print("Has memory leak {any}", .{gpa.detectLeaks()});
 
     var img = try Image.create(64, 48, allocator);
     defer allocator.free(img.pixels);
@@ -122,7 +117,8 @@ pub fn main() !void {
         }
     }
 
-    const p3_parsed_image = try img.toP3();
+    const p3_parsed_image = try img.toP3(allocator);
+    defer allocator.free(p3_parsed_image);
     const file_path = "test.ppm";
 
     // Writing to a file
