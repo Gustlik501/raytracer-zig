@@ -5,12 +5,12 @@ pub const ImageError = error{
 };
 
 pub const Image = struct {
-    width: u8,
-    height: u8,
+    width: u16,
+    height: u16,
     pixels: []@Vector(3, u8),
 
-    pub fn create(width: u8, height: u8, allocator: std.mem.Allocator) !Image {
-        const pixel_count = @as(u16, width) * @as(u16, height);
+    pub fn create(width: u16, height: u16, allocator: std.mem.Allocator) !Image {
+        const pixel_count = @as(u32, width) * @as(u32, height);
         std.debug.print("Pixel count: {}\n", .{pixel_count});
         const pixels = try allocator.alloc(@Vector(3, u8), pixel_count);
         @memset(pixels, @splat(0));

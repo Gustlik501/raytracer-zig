@@ -3,31 +3,34 @@ const print = std.debug.print;
 
 const Image = @import("image.zig").Image;
 
-//NOTE: firguring out calculating this as a float maybe :<
-//      Could be cool to automagically detirmine and return the minimum sized float needed to represet the distance correctly,
-//      even when it's passed an int. Might be a cool project function to learn comptime later on
-pub fn distance(fp_x: anytype, fp_y: anytype, sp_x: anytype, sp_y: anytype) @TypeOf(fp_x) {
-    //switch (@typeInfo(@TypeOf(fp_x))){
-    //    .int => {
-    //        print("Calculating info for integer", .{})
-    //        },
-    //    else => {},
-    //}
-
-    //const fp_x_float: f32 = @floatFromInt(fp_x);
-    //const fp_y_float: f32 = @floatFromInt(fp_y);
-    //const sp_x_float: f32 = @floatFromInt(sp_x);
-    //const sp_y_float: f32 = @floatFromInt(sp_y);
-
-    const distance_x = @abs(fp_x - sp_x);
-    const distance_y = @abs(fp_y - sp_y);
-    const distance_between_points = std.math.sqrt((distance_x * distance_x) + (distance_y * distance_y));
-    return distance_between_points;
+pub fn normalizeVector(vector: anytype) @TypeOf(vector) {
+    const vector_length: @TypeOf(vector) = @splat(@sqrt(@reduce(.Add, vector * vector)));
+    const normalized_vector = vector / vector_length;
+    return normalized_vector;
 }
 
-pub fn isPointInCircle(x: i16, y: i16, circle_x: i16, circle_y: i16, circle_radius: u16) bool {
-    const distance_from_origin = distance(x, y, circle_x, circle_y);
-    return (distance_from_origin < circle_radius);
+pub fn dotProduct(vector1: anytype, vector2: anytype) f32 {
+    return @reduce(.Add, vector1 * vector2);
+}
+
+pub fn solveQuadratic(a: f32, b: f32, c: f32) ?[2]f32 {
+    var solutions = [2]f32{ 0, 0 };
+    const discr: f32 = b * b - 4 * a * c;
+    if (discr < 0) return null else if (discr == 0) {
+        solutions[0] = -0.5 * b / a;
+        solutions[1] = -0.5 * b / a;
+    } else {
+        const q: f32 = if (b > 0) -0.5 * (b + @sqrt(discr)) else -0.5 * (b - @sqrt(discr));
+        solutions[0] = q / a;
+        solutions[1] = c / q;
+    }
+    if (solutions[0] > solutions[1]) {
+        const temp = solutions[1];
+        solutions[1] = solutions[0];
+        solutions[0] = temp;
+    }
+
+    return solutions;
 }
 
 pub fn main() !void {
@@ -36,16 +39,38 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     defer print("Has memory leak {any}", .{gpa.detectLeaks()});
 
-    var img = try Image.create(64, 48, allocator);
+    var img = try Image.create(640, 480, allocator);
     defer allocator.free(img.pixels);
 
-    const circle_x = img.width / 2;
-    const circle_y = img.height / 2;
-    const circle_radius = 7;
+    const circle_radius = 50;
+    const circle_position = @Vector(3, f32){ 0, 0, 0 };
+    const camera_position = @Vector(3, f32){ 0, 0, -200 };
+
+    const view_direction = @Vector(3, f32){ 0, 0, 1 };
+    const focal_distance: @Vector(3, f32) = @splat(100);
+
+    const screen_center = camera_position + (view_direction * focal_distance);
+    const screen_width_half: f32 = @floatFromInt(img.width / 2);
+    const screen_height_half: f32 = @floatFromInt(img.height / 2);
+    const distance_to_origin = camera_position - circle_position;
 
     for (0..img.width) |x| {
         for (0..img.height) |y| {
-            if (isPointInCircle(@intCast(x), @intCast(y), circle_x, circle_y, circle_radius)) {
+            const xf: f32 = @floatFromInt(x);
+            const yf: f32 = @floatFromInt(y);
+            const current_pixel = @Vector(3, f32){ screen_center[0] + xf - screen_width_half, screen_center[1] + yf - screen_height_half, screen_center[2] };
+
+            const signed_distance_from_camera = current_pixel - camera_position;
+            const ray_direction = normalizeVector(signed_distance_from_camera);
+
+            const a = dotProduct(ray_direction, ray_direction);
+            const b = 2 * dotProduct(ray_direction, distance_to_origin);
+            const c = dotProduct(distance_to_origin, distance_to_origin) - (circle_radius * circle_radius);
+
+            const intersections = solveQuadratic(a, b, c);
+            if (intersections != null) {
+                //print("Checking pixel {},{}: ray_direction: {d} - distance_from_camera: {d}\n", .{x,y,ray_direction, signed_distance_from_camera});
+                //print("Found intersection at pixel: {},{}\n", .{ x, y });
                 try img.setPixel(@intCast(x), @intCast(y), .{ 255, 255, 255 });
             }
         }
