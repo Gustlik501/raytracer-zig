@@ -1,4 +1,5 @@
 const std = @import("std");
+const print = std.debug.print;
 
 const Color = struct {
     r: u8 = 0,
@@ -58,12 +59,16 @@ const Image = struct {
             const written_color_slice = try std.fmt.bufPrint(buffer[written_length..], "{} {} {}", .{ pixel.r, pixel.g, pixel.b });
             written_length += written_color_slice.len;
 
-            if ((i + 1) % self.width == 0) _ = try std.fmt.bufPrint(buffer[written_length..], "\n", .{}) else _ = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
-
-            written_length += 1;
+            if ((i + 1) % self.width == 0) {
+                const written_spacer = try std.fmt.bufPrint(buffer[written_length..], "\n", .{});
+                written_length += written_spacer.len;
+            } else {
+                const written_spacer = try std.fmt.bufPrint(buffer[written_length..], " ", .{});
+                written_length += written_spacer.len;
+            }
         }
 
-        //std.debug.print("Buffer:\n{s}{s}{s}", .{"start", buffer[0..written_length], "end"});
+        //print("Buffer:\n{s}{s}{s}", .{"start", buffer[0..written_length], "end"});
 
         return buffer[0..written_length]; //This will cause a dangling pointer.
     }
@@ -75,7 +80,7 @@ const Image = struct {
 pub fn distance(fp_x: anytype, fp_y: anytype, sp_x: anytype, sp_y: anytype) @TypeOf(fp_x) {
     //switch (@typeInfo(@TypeOf(fp_x))){
     //    .int => {
-    //        std.debug.print("Calculating info for integer", .{})
+    //        print("Calculating info for integer", .{})
     //        },
     //    else => {},
     //}
@@ -97,7 +102,10 @@ pub fn isPointInCircle(x: i16, y: i16, circle_x: i16, circle_y: i16, circle_radi
 }
 
 pub fn main() !void {
-    var allocator = std.heap.page_allocator;
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+    defer _ = gpa.deinit();
+
     var img = try Image.create(64, 48, allocator);
     defer allocator.free(img.pixels);
     const white = Color{ .r = 255, .g = 255, .b = 255 };
