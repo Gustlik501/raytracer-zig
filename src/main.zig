@@ -82,6 +82,8 @@ pub fn main() !void {
 
     const camera = Camera{ .position = .{ 0, 0, -200 }, .view_direction = .{ 0, 0, 1 }, .focal_distance = @splat(100) };
 
+    const light_source = Light{ .position = .{ 25, -100, -200 }, .color = .{ 1, 1, 1 } };
+
     const screen_center = camera.getFocalCenter();
     const screen_width_half: f32 = @floatFromInt(image.width / 2);
     const screen_height_half: f32 = @floatFromInt(image.height / 2);
@@ -107,8 +109,31 @@ pub fn main() !void {
                     const index = y * image.width + x;
                     const first_intersection = intersections.?[0];
                     if (first_intersection < closestIntersections[index]) {
-                        try image.setPixel(@intCast(x), @intCast(y), sphere.color);
-                        closestIntersections[index] = first_intersection;
+                        defer closestIntersections[index] = first_intersection;
+                        //try image.setPixel(@intCast(x), @intCast(y), sphere.color);
+
+                        // Steps to calculate lighting
+                        // If the ray hits the sphere, we calculate point P where it happens
+                        const intersection_point = ray.origin + ray.direction * @as(@Vector(3, f32), @splat(first_intersection));
+                        // Calculate the Sphere’s normal at point P
+                        const normal_at_intersection = normalizeVector(intersection_point - sphere.origin);
+                        // Then we cast a ray from P to the light source L̅
+                        // R̅ is a vector of length one from P̅ to L̅: R̅ = (L̅ - P̅) / |L̅ - P̅|
+                        const light_ray_direction = normalizeVector(light_source.position - intersection_point);
+                        const light_ray = Ray{ .origin = intersection_point, .direction = light_ray_direction };
+                        // If this ray hits the other sphere, the point is occluded and the pixel remains dark.
+                        for (spheres.items) |sphere2| {
+                            if (&sphere == &sphere2) continue;
+                            const light_intersections = light_ray.getSphereIntersections(sphere2);
+                            if (light_intersections != null) continue;
+
+                            // Otherwise, we compute the color using using the angle between normal and direction to the light.
+                            // Then, R̅ ⋅ N̅ gives us this “is the light falling straight at the surface?” coefficient between 0 and 1.
+                            //print("Light ray direction: {d} -- Normal at intersection: {d}\n", .{normal_at_intersection, light_ray_direction});
+                            const light_intensity = @max(0, dotProduct(light_ray_direction, normal_at_intersection));
+                            const final_color = sphere.color * light_source.color * @as(@Vector(3, f32), @splat(light_intensity));
+                            try image.setPixel(@intCast(x), @intCast(y), final_color);
+                        }
                     }
                 }
             }
