@@ -28,25 +28,9 @@ pub fn solveQuadratic(a: f32, b: f32, c: f32) ?[2]f32 {
     return solutions;
 }
 
-pub const Sphere = struct {
-    origin: @Vector(3, f32),
-    radius: f32,
-    color: @Vector(3, f32),
-};
-
 pub const Ray = struct {
     origin: @Vector(3, f32),
     direction: @Vector(3, f32),
-
-    pub fn getSphereIntersections(self: *const Ray, sphere: Sphere) ?[2]f32 {
-        const distance_to_origin = self.origin - sphere.origin;
-
-        const a = 1; //dotProduct(self.direction, self.direction); //Always 1???
-        const b = 2 * dotProduct(self.direction, distance_to_origin);
-        const c = dotProduct(distance_to_origin, distance_to_origin) - (sphere.radius * sphere.radius);
-
-        return solveQuadratic(a, b, c);
-    }
 };
 
 pub const Light = struct {
@@ -54,15 +38,189 @@ pub const Light = struct {
     color: @Vector(3, f32),
 };
 
+
+pub const Sphere = struct {
+    origin: @Vector(3, f32),
+    radius: f32,
+    color: @Vector(3, f32),
+    id: u8,
+
+    pub fn getRayIntersection(self: *const Sphere, ray: Ray) ?f32 {
+        const distance_to_origin = ray.origin - self.origin;
+
+        const a = 1; //dotProduct(self.direction, self.direction); //Always 1???
+        const b = 2 * dotProduct(ray.direction, distance_to_origin);
+        const c = dotProduct(distance_to_origin, distance_to_origin) - (self.radius * self.radius);
+
+        const solved_quadratic =  solveQuadratic(a, b, c) orelse return null;
+        if (solved_quadratic[0] < 0) {
+            if (solved_quadratic[1] < 0) return null; // Both t0 and t1 are negative.
+            return solved_quadratic[1];
+        }
+        return solved_quadratic[0];
+    }
+};
+
+pub const Shape = union(enum) {
+    sphere: Sphere,
+
+    // Only call this where you don't need properties from the shape later on
+    pub fn getRayIntersection(self: *const Shape, ray: Ray) ?f32{ 
+        switch(self.*){
+            .sphere => |sphere| {
+                 return sphere.getRayIntersection(ray);
+            },
+        }
+    }
+
+    pub fn getId(self: *const Shape) u8{ 
+        switch(self.*){
+            .sphere => |sphere| {
+                 return sphere.id;
+            },
+        }
+    }
+};
+
+
 pub const Camera = struct {
     position: @Vector(3, f32),
     view_direction: @Vector(3, f32),
     focal_distance: @Vector(3, f32), //Stored as a vector for easer vector operations, could just as well be a float
-    //TODO: FIGURE OUT IMPEMENTING THE SCREEN IN THE CAMERA
+    screen: Image, //Could be rendundant if the below optimization is used
+    closest_intersections: []f32, //This could be used to store color data when the tracing for the pixel is done to optimize performance
+    width: u16, //This data is duplicated in the image
+    height: u16, //I think this will still allowed faster lookup though
+
+
+    pub fn init(position: @Vector(3, f32), view_direction: @Vector(3, f32), focal_distance: f32, width: u16, height: u16, allocator: std.mem.Allocator) !Camera {
+        const pixel_count = @as(u32, width) * @as(u32, height);
+        const closest_intersections = try allocator.alloc(f32, pixel_count);
+        @memset(closest_intersections, std.math.floatMax(f32));
+        return Camera{
+            .position = position,
+            .view_direction = view_direction,
+            .focal_distance = @splat(focal_distance),
+            .screen = try Image.init(width, height, allocator),
+            .closest_intersections = closest_intersections,
+            .width = width,
+            .height = height,
+        };
+    }
+
+    pub fn deinit(self: *const Camera, allocator: std.mem.Allocator) void {
+        self.screen.deinit(allocator);
+        allocator.free(self.closest_intersections);
+    }
 
     pub fn getFocalCenter(self: *const Camera) @Vector(3, f32) {
         return self.position + (self.view_direction * self.focal_distance);
     }
+
+    pub fn renderScene(self: *const Camera, scene: *const Scene) !void {
+        const screen_center = self.getFocalCenter();
+        const screen_width_half: f32 = @floatFromInt(self.screen.width / 2);
+        const screen_height_half: f32 = @floatFromInt(self.screen.height / 2);
+
+        //clear image background and intersection cache
+        
+        @memset(self.closest_intersections, std.math.floatMax(f32));
+        self.screen.resetBuffer(.{0,0,0});
+        for (0..self.width) |x| {
+            for (0..self.height) |y| {
+                const xf: f32 = @floatFromInt(x);
+                const yf: f32 = @floatFromInt(y);
+                const current_pixel = @Vector(3, f32){ screen_center[0] + xf - screen_width_half, screen_center[1] + yf - screen_height_half, screen_center[2] };
+
+                const signed_distance_from_camera = current_pixel - self.position;
+                const ray_direction = normalizeVector(signed_distance_from_camera);
+
+                const ray = Ray{ .origin = self.position, .direction = ray_direction };
+                const index = y * self.width + x;
+
+                for (scene.shapes, 0..) |shapeoptional, first_shape_index| {
+                    const shape = shapeoptional orelse continue;
+                    switch(shape){ //TODO: Consider if keeping this is worth it or if the performance impact of doing multiple switches inside the shape tagged union is a worth tradeof.
+                        .sphere => |sphere| {
+                            const intersection = sphere.getRayIntersection(ray) orelse continue;
+                            
+                            if (intersection < self.closest_intersections[index]) {
+                                defer self.closest_intersections[index] = intersection;
+
+                                // Steps to calculate lighting
+                                // If the ray hits the sphere, we calculate point P where it happens
+                                const intersection_point = ray.origin + ray.direction * @as(@Vector(3, f32), @splat(intersection));
+
+                                // Then we cast a ray from P to the light source L̅
+                                // R̅ is a vector of length one from P̅ to L̅: R̅ = (L̅ - P̅) / |L̅ - P̅|
+                                var final_color: @Vector(3, f32) = @splat(0);
+                                for(scene.lights) |lightoptional| {
+                                    const light = lightoptional orelse continue;
+                              
+                                    const light_ray_direction = normalizeVector(light.position - intersection_point);
+                                    const light_ray = Ray{ .origin = intersection_point, .direction = light_ray_direction };
+                                    // If this ray hits the other sphere, the point is occluded and the pixel remains dark.
+                                
+                                    //Shadow casting code
+                                    const intercepted = for (scene.shapes, 0..) |shapeoptional2, second_shape_index| {
+                                    if(first_shape_index == second_shape_index) continue;
+                                        const shape2 = shapeoptional2 orelse continue;
+
+                                        const light_intersections = shape2.getRayIntersection(light_ray);
+                                        if (light_intersections != null){
+                                            //@abs(light_ray.direction[0]) < 0.01 and @abs(light_ray.direction[1]) < 0.01
+                                            break true;
+                                        } 
+                                    } else false;
+                                
+                                    if (intercepted) continue;
+
+                                    // Otherwise, we compute the color using using the angle between normal and direction to the light.
+                                    // Then, R̅ ⋅ N̅ gives us this “is the light falling straight at the surface?” coefficient between 0 and 1.
+                                    // print("Light ray direction: {d} -- Normal at intersection: {d}\n", .{normal_at_intersection, light_ray_direction});
+
+                                    // Calculate the Sphere’s normal at point P
+                                    const normal_at_intersection = normalizeVector(intersection_point - sphere.origin);
+
+                                    const light_intensity = @max(0, dotProduct(light_ray_direction, normal_at_intersection));
+                                    final_color += sphere.color * light.color * @as(@Vector(3, f32), @splat(light_intensity));
+                                }
+
+                                final_color = std.math.clamp(final_color, @as(@Vector(3, f32), @splat(0)), @as(@Vector(3, f32), @splat(1)));
+
+                                try self.screen.setPixel(@intCast(x), @intCast(y), final_color);
+
+                            }
+                        },
+                    }
+                }        
+            }
+        }
+    }
+};
+
+
+const MAX_CAMERAS = 5;
+const MAX_LIGHTS = 10;
+const MAX_SHAPES = 100;
+
+pub const Scene = struct {
+    //lights, cameras, shapes
+    cameras: [MAX_CAMERAS]?Camera = .{null} ** MAX_CAMERAS,
+    shapes: [MAX_SHAPES]?Shape = .{null} ** MAX_SHAPES,
+    lights: [MAX_LIGHTS]?Light = .{null} ** MAX_LIGHTS,
+    camera_count: u8 = 0,
+    light_count: u8 = 0,
+    shape_count: u8 = 0,
+
+
+    pub fn render(self: *const Scene) !void {
+        for(self.cameras) |camera| {
+            if(camera == null) continue;
+            try camera.?.renderScene(self);
+        }
+    }
+
 };
 
 pub fn main() !void {
@@ -71,76 +229,25 @@ pub fn main() !void {
     defer _ = gpa.deinit();
     defer print("Has memory leak {any}", .{gpa.detectLeaks()});
 
-    var image = try Image.create(640, 480, allocator);
-    defer allocator.free(image.pixels);
 
-    var spheres = std.ArrayList(Sphere).init(allocator);
-    defer spheres.deinit();
+    var scene = Scene{};
+    scene.shapes[0] = Shape{ .sphere = Sphere{.origin = .{ -50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 0}};
+    scene.shapes[1] = Shape{ .sphere = Sphere{ .origin = .{ 0, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 1 }};
+    scene.shapes[2] = Shape{ .sphere = Sphere{ .origin = .{ 50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 2 }};
+    //scene.shapes[2] = Shape{ .sphere = Sphere{ .origin = .{ 0, -50, -150 }, .radius = 40, .color = .{ 0, 1, 1 }}};
 
-    _ = try spheres.append(Sphere{ .origin = .{ 0, 0, -100 }, .radius = 50, .color = .{ 1, 0.4, 1 } });
-    _ = try spheres.append(Sphere{ .origin = .{ 0, -50, -50 }, .radius = 50, .color = .{ 0, 1, 1 } });
+    const camera = try Camera.init(.{ 0, 0, 0 }, .{ 0, 0, 1 }, 100, 640, 480, allocator);
+    defer camera.deinit(allocator);
 
-    const camera = Camera{ .position = .{ 0, 0, -200 }, .view_direction = .{ 0, 0, 1 }, .focal_distance = @splat(100) };
+    scene.cameras[0] = camera;
 
-    const light_source = Light{ .position = .{ 25, -100, -200 }, .color = .{ 1, 1, 1 } };
+    scene.lights[0] =  Light{ .position = .{ 0, 0, 0 }, .color = .{ 0.5, 0.5, 0.5 } };
+    scene.lights[1] =  Light{ .position = .{ -100, -100, 50 }, .color = .{ 1,0,0 } };
+    scene.lights[2] =  Light{ .position = .{ 100, -100, 50 }, .color = .{ 0,0,1 } };
+    try scene.render();
 
-    const screen_center = camera.getFocalCenter();
-    const screen_width_half: f32 = @floatFromInt(image.width / 2);
-    const screen_height_half: f32 = @floatFromInt(image.height / 2);
 
-    const closestIntersections = try allocator.alloc(f32, @as(u32, image.width) * image.height);
-    @memset(closestIntersections, std.math.floatMax(f32));
-    defer allocator.free(closestIntersections);
-
-    for (0..image.width) |x| {
-        for (0..image.height) |y| {
-            const xf: f32 = @floatFromInt(x);
-            const yf: f32 = @floatFromInt(y);
-            const current_pixel = @Vector(3, f32){ screen_center[0] + xf - screen_width_half, screen_center[1] + yf - screen_height_half, screen_center[2] };
-
-            const signed_distance_from_camera = current_pixel - camera.position;
-            const ray_direction = normalizeVector(signed_distance_from_camera);
-
-            const ray = Ray{ .origin = camera.position, .direction = ray_direction };
-
-            for (spheres.items) |sphere| {
-                const intersections = ray.getSphereIntersections(sphere);
-                if (intersections != null) {
-                    const index = y * image.width + x;
-                    const first_intersection = intersections.?[0];
-                    if (first_intersection < closestIntersections[index]) {
-                        defer closestIntersections[index] = first_intersection;
-                        //try image.setPixel(@intCast(x), @intCast(y), sphere.color);
-
-                        // Steps to calculate lighting
-                        // If the ray hits the sphere, we calculate point P where it happens
-                        const intersection_point = ray.origin + ray.direction * @as(@Vector(3, f32), @splat(first_intersection));
-                        // Calculate the Sphere’s normal at point P
-                        const normal_at_intersection = normalizeVector(intersection_point - sphere.origin);
-                        // Then we cast a ray from P to the light source L̅
-                        // R̅ is a vector of length one from P̅ to L̅: R̅ = (L̅ - P̅) / |L̅ - P̅|
-                        const light_ray_direction = normalizeVector(light_source.position - intersection_point);
-                        const light_ray = Ray{ .origin = intersection_point, .direction = light_ray_direction };
-                        // If this ray hits the other sphere, the point is occluded and the pixel remains dark.
-                        for (spheres.items) |sphere2| {
-                            if (&sphere == &sphere2) continue;
-                            const light_intersections = light_ray.getSphereIntersections(sphere2);
-                            if (light_intersections != null) continue;
-
-                            // Otherwise, we compute the color using using the angle between normal and direction to the light.
-                            // Then, R̅ ⋅ N̅ gives us this “is the light falling straight at the surface?” coefficient between 0 and 1.
-                            //print("Light ray direction: {d} -- Normal at intersection: {d}\n", .{normal_at_intersection, light_ray_direction});
-                            const light_intensity = @max(0, dotProduct(light_ray_direction, normal_at_intersection));
-                            const final_color = sphere.color * light_source.color * @as(@Vector(3, f32), @splat(light_intensity));
-                            try image.setPixel(@intCast(x), @intCast(y), final_color);
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    const p3_parsed_image = try image.toP3(allocator);
+    const p3_parsed_image = try scene.cameras[0].?.screen.toP3(allocator);
     defer allocator.free(p3_parsed_image);
     const file_path = "test.ppm";
 

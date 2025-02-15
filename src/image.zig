@@ -10,7 +10,7 @@ pub const Image = struct {
     height: u16,
     pixels: []@Vector(3, u8),
 
-    pub fn create(width: u16, height: u16, allocator: std.mem.Allocator) !Image {
+    pub fn init(width: u16, height: u16, allocator: std.mem.Allocator) !Image {
         const pixel_count = @as(u32, width) * @as(u32, height);
         std.debug.print("Pixel count: {}\n", .{pixel_count});
         const pixels = try allocator.alloc(@Vector(3, u8), pixel_count);
@@ -22,7 +22,15 @@ pub const Image = struct {
         };
     }
 
-    pub fn setPixel(self: *Image, x: u32, y: u32, color: anytype) ImageError!void {
+    pub fn deinit(self: *const Image, allocator: std.mem.Allocator) void {
+        allocator.free(self.pixels);
+    }
+
+    pub fn resetBuffer(self: *const Image, color: @Vector(3, u8)) void {
+        @memset(self.pixels, color);
+    }
+
+    pub fn setPixel(self: *const Image, x: u32, y: u32, color: anytype) ImageError!void {
         if (x >= self.width or y >= self.height) {
             return error.PixelOutOfBounds;
         }
