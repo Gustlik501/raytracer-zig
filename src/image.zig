@@ -2,6 +2,7 @@ const std = @import("std");
 
 pub const ImageError = error{
     PixelOutOfBounds,
+    InvalidColorFormat,
 };
 
 pub const Image = struct {
@@ -21,12 +22,16 @@ pub const Image = struct {
         };
     }
 
-    pub fn setPixel(self: *Image, x: u32, y: u32, color: @Vector(3, u8)) !void {
+    pub fn setPixel(self: *Image, x: u32, y: u32, color: anytype) ImageError!void {
         if (x >= self.width or y >= self.height) {
             return error.PixelOutOfBounds;
         }
         const index = y * self.width + x;
-        self.pixels[index] = color;
+        switch (@TypeOf(color)) {
+            @Vector(3, u8) => self.pixels[index] = color,
+            @Vector(3, f32) => self.pixels[index] = @intFromFloat(color * @as(@Vector(3, f32), @splat(255))),
+            else => return ImageError.InvalidColorFormat,
+        }
     }
 
     pub fn print(self: *Image) void {
