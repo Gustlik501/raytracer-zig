@@ -43,7 +43,6 @@ pub const Sphere = struct {
     origin: @Vector(3, f32),
     radius: f32,
     color: @Vector(3, f32),
-    id: u8,
 
     pub fn getRayIntersection(self: *const Sphere, ray: Ray) ?f32 {
         const distance_to_origin = ray.origin - self.origin;
@@ -59,6 +58,11 @@ pub const Sphere = struct {
         }
         return solved_quadratic[0];
     }
+
+    pub fn getNormalAtPoint(self: *const Sphere, point: @Vector(3, f32)) @Vector(3, f32){
+        return normalizeVector(point - self.origin);
+    }
+
 };
 
 pub const Shape = union(enum) {
@@ -69,14 +73,6 @@ pub const Shape = union(enum) {
         switch(self.*){
             .sphere => |sphere| {
                  return sphere.getRayIntersection(ray);
-            },
-        }
-    }
-
-    pub fn getId(self: *const Shape) u8{ 
-        switch(self.*){
-            .sphere => |sphere| {
-                 return sphere.id;
             },
         }
     }
@@ -151,12 +147,13 @@ pub const Camera = struct {
                                 // If the ray hits the sphere, we calculate point P where it happens
                                 const intersection_point = ray.origin + ray.direction * @as(@Vector(3, f32), @splat(intersection));
 
-                                // Then we cast a ray from P to the light source L̅
-                                // R̅ is a vector of length one from P̅ to L̅: R̅ = (L̅ - P̅) / |L̅ - P̅|
+                               
                                 var final_color: @Vector(3, f32) = @splat(0);
                                 for(scene.lights) |lightoptional| {
                                     const light = lightoptional orelse continue;
                               
+                                    // Then we cast a ray from P to the light source L̅
+                                    // R̅ is a vector of length one from P̅ to L̅: R̅ = (L̅ - P̅) / |L̅ - P̅|
                                     const light_ray_direction = normalizeVector(light.position - intersection_point);
                                     const light_ray = Ray{ .origin = intersection_point, .direction = light_ray_direction };
                                     // If this ray hits the other sphere, the point is occluded and the pixel remains dark.
@@ -178,11 +175,7 @@ pub const Camera = struct {
                                     // Otherwise, we compute the color using using the angle between normal and direction to the light.
                                     // Then, R̅ ⋅ N̅ gives us this “is the light falling straight at the surface?” coefficient between 0 and 1.
                                     // print("Light ray direction: {d} -- Normal at intersection: {d}\n", .{normal_at_intersection, light_ray_direction});
-
-                                    // Calculate the Sphere’s normal at point P
-                                    const normal_at_intersection = normalizeVector(intersection_point - sphere.origin);
-
-                                    const light_intensity = @max(0, dotProduct(light_ray_direction, normal_at_intersection));
+                                    const light_intensity = @max(0, dotProduct(light_ray_direction, sphere.getNormalAtPoint(intersection_point)));
                                     final_color += sphere.color * light.color * @as(@Vector(3, f32), @splat(light_intensity));
                                 }
 
@@ -231,19 +224,19 @@ pub fn main() !void {
 
 
     var scene = Scene{};
-    scene.shapes[0] = Shape{ .sphere = Sphere{.origin = .{ -50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 0}};
-    scene.shapes[1] = Shape{ .sphere = Sphere{ .origin = .{ 0, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 1 }};
-    scene.shapes[2] = Shape{ .sphere = Sphere{ .origin = .{ 50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }, .id = 2 }};
+    scene.shapes[0] = Shape{ .sphere = Sphere{.origin = .{ -50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }}};
+    scene.shapes[1] = Shape{ .sphere = Sphere{ .origin = .{ 0, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }}};
+    scene.shapes[2] = Shape{ .sphere = Sphere{ .origin = .{ 50, 0, 100 }, .radius = 50, .color = .{ 1, 1, 1 }}};
     //scene.shapes[2] = Shape{ .sphere = Sphere{ .origin = .{ 0, -50, -150 }, .radius = 40, .color = .{ 0, 1, 1 }}};
 
-    const camera = try Camera.init(.{ 0, 0, 0 }, .{ 0, 0, 1 }, 100, 640, 480, allocator);
+    const camera = try Camera.init(.{ 0, 0, 0 }, .{ 0, 0, 1 }, 200, 640, 480, allocator);
     defer camera.deinit(allocator);
 
     scene.cameras[0] = camera;
 
     scene.lights[0] =  Light{ .position = .{ 0, 0, 0 }, .color = .{ 0.5, 0.5, 0.5 } };
-    scene.lights[1] =  Light{ .position = .{ -100, -100, 50 }, .color = .{ 1,0,0 } };
-    scene.lights[2] =  Light{ .position = .{ 100, -100, 50 }, .color = .{ 0,0,1 } };
+    scene.lights[1] =  Light{ .position = .{ -100, -100, 0 }, .color = .{ 1,0,0 } };
+    scene.lights[2] =  Light{ .position = .{ 100, -100, 0 }, .color = .{ 0,0,1 } };
     try scene.render();
 
 
